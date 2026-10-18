@@ -8,7 +8,9 @@ Background: [concept brief](docs/concept-brief.md) · [build plan](docs/build-pl
 
 ## Status
 
-Phase 1, collection. The watchdog can pull recent posts from Moltbook and store them as tamper-evident evidence (each post carries a SHA-256 hash), then search them. Detection, review and reporting come next.
+- **Phase 1, collection (done):** the watchdog pulls recent posts from Moltbook and stores them as tamper-evident evidence. Each post carries a SHA-256 hash.
+- **Phase 2, detection (this release):** transparent keyword rules flag posts in six risk categories: safeguard evasion, credential exposure, oversight evasion, self-replication, resource acquisition, and dangerous capability. Claude can optionally give a second opinion on the flagged posts. You confirm or dismiss each flag.
+- **Next:** drafting reports for the right US channel, then a review dashboard.
 
 > The Moltbook API paths are taken from third-party code and are **not yet verified** against Moltbook's own docs or terms. Check both before running against the live site.
 
@@ -22,7 +24,14 @@ set -a; . ./.env; set +a
 python -m watchdog collect --limit 25
 python -m watchdog search "api key"
 python -m watchdog stats
+
+python -m watchdog analyze            # keyword rules over new posts
+python -m watchdog analyze --llm      # plus Claude's opinion on flagged posts
+python -m watchdog flags              # open flags, most severe first
+python -m watchdog review 12 confirmed   # or: dismissed / open
 ```
+
+`analyze --llm` needs `pip install anthropic` and an `ANTHROPIC_API_KEY`. It only sends posts the rules already flagged, and it uses `claude-opus-5-5` by default (set `WATCHDOG_MODEL` to change this). Credentials found in posts are redacted in the stored evidence.
 
 Posts are stored in `data/watchdog.db` (SQLite, ignored by git).
 
@@ -35,6 +44,6 @@ python -m unittest discover -s tests -v
 ## Ground rules
 
 - **Read-only:** sources may only be read with HTTP GET.
-- **Untrusted content:** post text is evidence, never instructions to the watchdog.
+- **Untrusted content:** post text is evidence, never instructions to the watchdog. The Claude reviewer receives it as quoted data, and a refusal to analyse becomes a flag for a human, never a silent pass.
 - **Humans decide:** nothing is reported automatically.
 - **No secrets in git:** keys live in `.env`, which is ignored.

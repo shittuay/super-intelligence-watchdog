@@ -6,7 +6,8 @@ import os
 import sqlite3
 from typing import Iterable
 
-from watchdog.models import Post
+from watchdog.detect.rules import Flag
+from watchdog.models import Post, utc_now
 
 SCHEMA = """
 CREATE TABLE IF NOT EXISTS posts (
@@ -24,7 +25,32 @@ CREATE TABLE IF NOT EXISTS posts (
     UNIQUE (source, external_id)
 );
 CREATE INDEX IF NOT EXISTS posts_fetched_at ON posts (fetched_at);
+
+-- One row per (post, analyzer) once that analyzer has looked at the post.
+CREATE TABLE IF NOT EXISTS analyses (
+    post_id INTEGER NOT NULL REFERENCES posts (id),
+    analyzer TEXT NOT NULL,
+    analyzed_at TEXT NOT NULL,
+    PRIMARY KEY (post_id, analyzer)
+);
+
+-- A flag is a lead for the human reviewer. Only its status ever changes.
+CREATE TABLE IF NOT EXISTS flags (
+    id INTEGER PRIMARY KEY,
+    post_id INTEGER NOT NULL REFERENCES posts (id),
+    analyzer TEXT NOT NULL,
+    rule_id TEXT NOT NULL,
+    category TEXT NOT NULL,
+    severity TEXT NOT NULL,
+    evidence TEXT NOT NULL,
+    explanation TEXT NOT NULL,
+    status TEXT NOT NULL DEFAULT 'open' CHECK (status IN ('open', 'confirmed', 'dismissed')),
+    created_at TEXT NOT NULL,
+    UNIQUE (post_id, analyzer, rule_id, category)
+);
 """
+
+FLAG_STATUSES = ("open", "confirmed", "dismissed")
 
 
 class Store:
@@ -58,3 +84,61 @@ class Store:
 
     def count(self) -> int:
         return self.db.execute("SELECT COUNT(*) FROM posts").fetchone()[0]
+
+    def post_from_row(self, row: sqlite3.Row) -> Post:
+        return Post(source=row["source"], external_id=row["external_id"], body=row["body"],
+                    author=row["author"], community=row["community"], title=row["title"],
+                    url=row["url"], created_at=row["created_at"], fetched_at=row["fetched_at"])
+
+    def unanalyzed(self, analyzer: str, limit: int = 1000) -> list[sqlite3.Row]:
+        return self.db.execute(
+            "SELECT p.* FROM posts p WHERE NOT EXISTS (SELECT 1 FROM analyses a"
+            " WHERE a.post_id = p.id AND a.analyzer = ?) ORDER BY p.id LIMIT ?",
+            (analyzer, limit),
+        ).fetchall()
+
+    def record_analysis(self, post_id: int, analyzer: str, flags: Iterable[Flag]) -> int:
+        """Store an analyzer's flags for a post and mark it done. Returns new flags added."""
+        now = utc_now()
+        added = 0
+        with self.db:
+            for flag in flags:
+                cursor = self.db.execute(
+                    "INSERT OR IGNORE INTO flags (post_id, analyzer, rule_id, category, severity,"
+                    " evidence, explanation, created_at) VALUES (?,?,?,?,?,?,?,?)",
+                    (post_id, flag.analyzer, flag.rule_id, flag.category, flag.severity,
+                     flag.evidence, flag.explanation, now),
+                )
+                added += cursor.rowcount
+            self.db.execute("INSERT OR IGNORE INTO analyses (post_id, analyzer, analyzed_at) VALUES (?,?,?)",
+                            (post_id, analyzer, now))
+        return added
+
+    def flagged_posts_without(self, analyzer: str, limit: int = 100) -> list[sqlite3.Row]:
+        """Posts that have open flags but haven't been seen by `analyzer` yet."""
+        return self.db.execute(
+            "SELECT DISTINCT p.* FROM posts p JOIN flags f ON f.post_id = p.id AND f.status = 'open'"
+            " WHERE NOT EXISTS (SELECT 1 FROM analyses a WHERE a.post_id = p.id AND a.analyzer = ?)"
+            " ORDER BY p.id LIMIT ?",
+            (analyzer, limit),
+        ).fetchall()
+
+    def flags_for(self, post_id: int) -> list[Flag]:
+        rows = self.db.execute("SELECT * FROM flags WHERE post_id = ?", (post_id,)).fetchall()
+        return [Flag(r["category"], r["severity"], r["rule_id"], r["evidence"], r["explanation"], r["analyzer"])
+                for r in rows]
+
+    def list_flags(self, status: str = "open", limit: int = 50) -> list[sqlite3.Row]:
+        return self.db.execute(
+            "SELECT f.*, p.source, p.author, p.community, p.url, p.content_sha256 FROM flags f"
+            " JOIN posts p ON p.id = f.post_id WHERE f.status = ?"
+            " ORDER BY CASE f.severity WHEN 'high' THEN 0 WHEN 'medium' THEN 1 ELSE 2 END, f.id"
+            " LIMIT ?",
+            (status, limit),
+        ).fetchall()
+
+    def set_flag_status(self, flag_id: int, status: str) -> bool:
+        if status not in FLAG_STATUSES:
+            raise ValueError(f"status must be one of {', '.join(FLAG_STATUSES)}")
+        with self.db:
+            return self.db.execute("UPDATE flags SET status = ? WHERE id = ?", (status, flag_id)).rowcount == 1
