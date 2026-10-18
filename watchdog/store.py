@@ -48,6 +48,17 @@ CREATE TABLE IF NOT EXISTS flags (
     created_at TEXT NOT NULL,
     UNIQUE (post_id, analyzer, rule_id, category)
 );
+
+-- Append-only record of every human decision and every report drafted.
+CREATE TABLE IF NOT EXISTS audit_log (
+    id INTEGER PRIMARY KEY,
+    at TEXT NOT NULL,
+    actor TEXT NOT NULL,
+    action TEXT NOT NULL,
+    flag_id INTEGER,
+    post_id INTEGER,
+    detail TEXT NOT NULL
+);
 """
 
 FLAG_STATUSES = ("open", "confirmed", "dismissed")
@@ -137,8 +148,36 @@ class Store:
             (status, limit),
         ).fetchall()
 
-    def set_flag_status(self, flag_id: int, status: str) -> bool:
+    def set_flag_status(self, flag_id: int, status: str, actor: str = "", note: str = "") -> bool:
+        """Record a reviewer's decision on a flag, and log it. Returns False if there is no such flag."""
         if status not in FLAG_STATUSES:
             raise ValueError(f"status must be one of {', '.join(FLAG_STATUSES)}")
         with self.db:
-            return self.db.execute("UPDATE flags SET status = ? WHERE id = ?", (status, flag_id)).rowcount == 1
+            row = self.db.execute("SELECT post_id, status FROM flags WHERE id = ?", (flag_id,)).fetchone()
+            if row is None:
+                return False
+            self.db.execute("UPDATE flags SET status = ? WHERE id = ?", (status, flag_id))
+            detail = f"{row['status']} -> {status}" + (f": {note}" if note else "")
+            self._log(actor, "review", detail, flag_id, row["post_id"])
+        return True
+
+    def get_post(self, post_id: int) -> sqlite3.Row | None:
+        return self.db.execute("SELECT * FROM posts WHERE id = ?", (post_id,)).fetchone()
+
+    def flag_rows(self, post_id: int, status: str | None = None) -> list[sqlite3.Row]:
+        query, params = "SELECT * FROM flags WHERE post_id = ?", [post_id]
+        if status:
+            query, params = query + " AND status = ?", params + [status]
+        return self.db.execute(query + " ORDER BY id", params).fetchall()
+
+    def log(self, actor: str, action: str, detail: str, flag_id: int | None = None,
+            post_id: int | None = None) -> None:
+        with self.db:
+            self._log(actor, action, detail, flag_id, post_id)
+
+    def _log(self, actor, action, detail, flag_id, post_id) -> None:
+        self.db.execute("INSERT INTO audit_log (at, actor, action, flag_id, post_id, detail) VALUES (?,?,?,?,?,?)",
+                        (utc_now(), actor or "unknown", action, flag_id, post_id, detail))
+
+    def audit(self, limit: int = 50) -> list[sqlite3.Row]:
+        return self.db.execute("SELECT * FROM audit_log ORDER BY id DESC LIMIT ?", (limit,)).fetchall()
