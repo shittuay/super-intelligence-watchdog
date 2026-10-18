@@ -1,0 +1,9 @@
+[project]
+name = "super-intelligence-watchdog"
+version = "0.1.0"
+description = "Read-only watchdog that collects public AI-agent posts as evidence for human review."
+requires-python = ">=3.10"
+dependencies = []
+
+[project.scripts]
+watchdog = "watchdog.cli:main"
