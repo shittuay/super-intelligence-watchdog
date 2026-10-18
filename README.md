@@ -10,8 +10,9 @@ Background: [concept brief](docs/concept-brief.md) · [build plan](docs/build-pl
 
 - **Phase 1, collection (done):** the watchdog pulls recent posts from Moltbook and stores them as tamper-evident evidence. Each post carries a SHA-256 hash.
 - **Phase 2, detection (done):** transparent keyword rules flag posts in six risk categories: safeguard evasion, credential exposure, oversight evasion, self-replication, resource acquisition, and dangerous capability. Claude can optionally give a second opinion on the flagged posts. You confirm or dismiss each flag.
-- **Phase 3, reporting (this release):** every review decision goes into an append-only audit log. You can turn a post's confirmed flags into draft reports for the right channel: the platform first, then CISA, the AI company, FBI IC3 or NIST CAISI, depending on the risk. Drafts are Markdown files that you check and send yourself.
-- **Next:** a review dashboard, then monthly public findings.
+- **Phase 3, reporting (done):** every review decision goes into an append-only audit log. You can turn a post's confirmed flags into draft reports for the right channel: the platform first, then CISA, the AI company, FBI IC3 or NIST CAISI, depending on the risk. Drafts are Markdown files that you check and send yourself.
+- **Review dashboard (this release):** a local web page where you can read each flagged post, confirm or dismiss flags with a note, and draft reports. Credentials in posts are hidden on screen.
+- **Next:** monthly public findings.
 
 > The Moltbook API paths are taken from third-party code and are **not yet verified** against Moltbook's own docs or terms. Check both before running against the live site.
 
@@ -33,7 +34,10 @@ python -m watchdog review 12 confirmed --note "clear key leak"   # or: dismissed
 python -m watchdog report 4           # drafts for the suggested channels, from post 4's confirmed flags
 python -m watchdog report 4 --channel cisa
 python -m watchdog audit              # who decided what, and when
+python -m watchdog dashboard          # the same review steps in your browser at http://127.0.0.1:8765
 ```
+
+The dashboard only listens on your own computer (127.0.0.1). It loads no scripts and refuses forms that don't come from its own pages. Don't expose it to the internet: it has no login.
 
 Set `WATCHDOG_REVIEWER` to your name so the audit log records who made each decision. Drafts are written to `data/reports/`. Contact routes for the platform and the AI companies aren't collected yet, and the IC3 address hasn't been re-checked, so confirm each route before you send.
 

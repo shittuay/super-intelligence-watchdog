@@ -107,6 +107,18 @@ def _evidence(text: str, match: re.Match, redact: bool) -> str:
     return ("…" if start else "") + snippet.replace("\n", " ").strip() + ("…" if end < len(text) else "")
 
 
+_KEY_BLOCK = re.compile(r"-----BEGIN [A-Z ]*PRIVATE KEY-----.*?(?:-----END [A-Z ]*PRIVATE KEY-----|\Z)", re.S)
+
+
+def redact(text: str) -> str:
+    """Hide anything that looks like a credential, for showing post text to a person."""
+    text = _KEY_BLOCK.sub("-----BEGIN PRIVATE KEY----- …[redacted]", text)
+    for rule in RULES:
+        if rule.redact:
+            text = rule.pattern.sub(lambda m: m.group(0)[:6] + "…[redacted]", text)
+    return text
+
+
 def scan(post: Post) -> list[Flag]:
     """Return one flag per rule that matches the post's title or body."""
     text = f"{post.title}\n{post.body}" if post.title else post.body

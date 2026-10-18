@@ -68,7 +68,8 @@ class Store:
     def __init__(self, path: str):
         if path != ":memory:":
             os.makedirs(os.path.dirname(path) or ".", exist_ok=True)
-        self.db = sqlite3.connect(path)
+        # check_same_thread=False lets the single-threaded dashboard server use a store opened elsewhere.
+        self.db = sqlite3.connect(path, check_same_thread=False)
         self.db.row_factory = sqlite3.Row
         self.db.executescript(SCHEMA)
 

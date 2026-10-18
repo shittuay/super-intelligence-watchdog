@@ -124,3 +124,17 @@ def write_draft(directory: str, post_id: int, channel_key: str, text: str) -> st
     with open(path, "w", encoding="utf-8") as handle:
         handle.write(text)
     return path
+
+
+def draft_reports(store, post_id: int, channels: list[str] | None, directory: str, actor: str) -> list[tuple[str, str]]:
+    """Write a draft per channel from a post's confirmed flags and log each one. Returns (channel, path) pairs."""
+    post = store.get_post(post_id)
+    if post is None:
+        raise LookupError(f"No post #{post_id}.")
+    confirmed = store.flag_rows(post_id, "confirmed")
+    written = []
+    for key in channels or suggested_channels([f["category"] for f in confirmed]):
+        path = write_draft(directory, post_id, key, draft(post, confirmed, key))
+        store.log(actor, "draft_report", f"{key}: {path}", post_id=post_id)
+        written.append((key, path))
+    return written
