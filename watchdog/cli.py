@@ -1,4 +1,4 @@
-"""Command line: `python -m watchdog collect|search|analyze|flags|review|report|audit|stats`."""
+"""Command line: `python -m watchdog collect|search|analyze|flags|review|report|audit|dashboard|stats`."""
 
 from __future__ import annotations
 
@@ -81,19 +81,21 @@ def review(args: argparse.Namespace) -> int:
 
 
 def report(args: argparse.Namespace) -> int:
-    store = _store()
-    post = store.get_post(args.post_id)
-    if post is None:
-        print(f"No post #{args.post_id}.", file=sys.stderr)
+    try:
+        written = reports.draft_reports(_store(), args.post_id, args.channel, args.out, _reviewer(args))
+    except LookupError as error:
+        print(error, file=sys.stderr)
         return 1
-    confirmed = store.flag_rows(args.post_id, "confirmed")
-    keys = args.channel or reports.suggested_channels([f["category"] for f in confirmed])
-    for key in keys:
-        text = reports.draft(post, confirmed, key)
-        path = reports.write_draft(args.out, args.post_id, key, text)
-        store.log(_reviewer(args), "draft_report", f"{key}: {path}", post_id=args.post_id)
+    for _, path in written:
         print(f"Drafted {path}")
     print("Nothing was sent. Review each draft and send it yourself.")
+    return 0
+
+
+def dashboard(args: argparse.Namespace) -> int:
+    from watchdog.dashboard import serve
+
+    serve(_store(), args.host, args.port, args.out, _reviewer(args))
     return 0
 
 
@@ -146,6 +148,13 @@ def main(argv: list[str] | None = None) -> int:
     p = commands.add_parser("audit", help="show the latest decisions and drafted reports")
     p.add_argument("--limit", type=int, default=50)
     p.set_defaults(run=audit)
+
+    p = commands.add_parser("dashboard", help="review flags and draft reports in your browser (local only)")
+    p.add_argument("--host", default="127.0.0.1")
+    p.add_argument("--port", type=int, default=8765)
+    p.add_argument("--out", default=os.getenv("WATCHDOG_REPORTS", "data/reports"))
+    p.add_argument("--reviewer", default="")
+    p.set_defaults(run=dashboard)
 
     p = commands.add_parser("stats", help="show how many posts are stored")
     p.set_defaults(run=stats)

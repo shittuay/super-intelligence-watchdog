@@ -43,6 +43,14 @@ class RulesTest(unittest.TestCase):
         self.assertNotIn(key, flag.evidence)
         self.assertIn("[redacted]", flag.evidence)
 
+    def test_redact_hides_keys_and_key_blocks(self):
+        key = "AKIA" + "ABCDEFGH" * 2
+        block = "-----BEGIN RSA PRIVATE KEY-----\nMIIEsecret\n-----END RSA PRIVATE KEY-----"
+        shown = rules.redact(f"aws {key} and\n{block}\nbye")
+        self.assertNotIn(key, shown)
+        self.assertNotIn("MIIEsecret", shown)
+        self.assertTrue(shown.endswith("bye"))
+
     def test_title_is_scanned(self):
         self.assertIn("oversight_evasion", {f.category for f in rules.scan(post("details inside", title="How to avoid monitoring"))})
 
