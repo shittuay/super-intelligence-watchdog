@@ -16,6 +16,7 @@ from urllib.parse import parse_qs, quote, urlparse
 
 from watchdog import report as reports
 from watchdog.detect.rules import redact
+from watchdog.sources.sample import is_sample
 from watchdog.store import FLAG_STATUSES, Store
 
 STYLE = """
@@ -27,8 +28,9 @@ nav a{margin-right:14px}
 .muted{color:#666;font-size:13px}pre{white-space:pre-wrap;word-break:break-word;background:#f0f0ee;padding:10px;border-radius:6px}
 form.inline{display:inline}input[type=text]{width:260px}button{margin:2px}
 .notice{background:#e8f3e8;border:1px solid #9c9;padding:8px 12px;border-radius:6px}
+.warn{background:#fdf3e1;border:1px solid #e0b060;padding:8px 12px;border-radius:6px}
 @media (prefers-color-scheme:dark){body{background:#1b1b1a;color:#e6e6e3}.card{background:#262624;border-color:#3a3a38}
-pre{background:#30302e}.muted{color:#aaa}.notice{background:#22361f;border-color:#3d6b3a}a{color:#8ab4f8}}
+pre{background:#30302e}.muted{color:#aaa}.notice{background:#22361f;border-color:#3d6b3a}.warn{background:#3a2e17;border-color:#8a6a2a}a{color:#8ab4f8}}
 """
 
 
@@ -103,7 +105,10 @@ class App:
                         f'<p class=muted>Drafts are saved as files for you to check and send yourself.</p>')
         else:
             drafting = "<p class=muted>Confirm at least one flag to draft a report.</p>"
-        body = (f'<div class=card><p class=muted>{esc(post["source"])} · {esc(post["author"] or "?")} in '
+        sample_note = ('<p class=warn><strong>Sample data:</strong> this post is synthetic test data, '
+                       'not something seen on a real site. Do not send reports about it.</p>'
+                       if is_sample(post["source"]) else '')
+        body = (f'{sample_note}<div class=card><p class=muted>{esc(post["source"])} · {esc(post["author"] or "?")} in '
                 f'{esc(post["community"] or "?")} · captured {esc(post["fetched_at"])}</p>'
                 f'<p><strong>{esc(redact(post["title"]))}</strong></p><pre>{esc(redact(post["body"]))}</pre>'
                 f'<p class=muted>URL: {esc(post["url"] or "not recorded")}<br>SHA-256: {esc(post["content_sha256"])}</p>'

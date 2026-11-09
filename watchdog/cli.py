@@ -1,4 +1,4 @@
-"""Command line: `python -m watchdog collect|search|analyze|flags|review|report|audit|dashboard|stats`."""
+"""Command line: `python -m watchdog collect|demo|search|analyze|flags|review|report|audit|dashboard|stats`."""
 
 from __future__ import annotations
 
@@ -9,21 +9,45 @@ import sys
 from watchdog import report as reports
 from watchdog.detect import rules
 from watchdog.sources.moltbook import DEFAULT_BASE_URL, MoltbookSource
+from watchdog.sources.sample import DEFAULT_SAMPLE_FILE, SampleSource
 from watchdog.store import FLAG_STATUSES, Store
 
 
-def _store() -> Store:
-    return Store(os.getenv("WATCHDOG_DB", "data/watchdog.db"))
+SAMPLE_DB = "data/sample.db"
+
+
+def _store(path: str | None = None) -> Store:
+    return Store(path or os.getenv("WATCHDOG_DB", "data/watchdog.db"))
 
 
 def collect(args: argparse.Namespace) -> int:
-    source = MoltbookSource(
-        api_key=os.getenv("MOLTBOOK_API_KEY", ""),
-        base_url=os.getenv("MOLTBOOK_BASE_URL", DEFAULT_BASE_URL),
-    )
+    if args.source == "sample":
+        source = SampleSource(args.sample_file)
+    else:
+        source = MoltbookSource(
+            api_key=os.getenv("MOLTBOOK_API_KEY", ""),
+            base_url=os.getenv("MOLTBOOK_BASE_URL", DEFAULT_BASE_URL),
+        )
     store = _store()
     added = store.add_posts(source.fetch_recent(args.limit))
     print(f"Collected {added} new post(s); {store.count()} stored in total.")
+    return 0
+
+
+def demo(args: argparse.Namespace) -> int:
+    """Load the synthetic sample posts into their own database and run the rules over them."""
+    store = _store(args.db)
+    added = store.add_posts(SampleSource(args.sample_file).fetch_recent(args.limit))
+    rows = store.unanalyzed("rules")
+    flagged = sum(store.record_analysis(row["id"], "rules", rules.scan(store.post_from_row(row))) for row in rows)
+    print(f"Loaded {added} new synthetic sample post(s) into {args.db} ({store.count()} in total).")
+    print(f"Rules checked {len(rows)} post(s) and raised {flagged} new flag(s); "
+          f"{len(store.list_flags('open', 1000))} flag(s) are open for review.")
+    print("These posts are made up for testing. Nothing was fetched from any website.\n")
+    print("Next, review them like real data:")
+    for step in ("flags", "review <flag id> confirmed --note \"why\"", "report <post id> --out data/sample-reports",
+                 "dashboard --out data/sample-reports"):
+        print(f"  WATCHDOG_DB={args.db} python -m watchdog {step}")
     return 0
 
 
@@ -112,7 +136,16 @@ def main(argv: list[str] | None = None) -> int:
 
     p = commands.add_parser("collect", help="fetch recent public posts and store new ones")
     p.add_argument("--limit", type=int, default=25)
+    p.add_argument("--source", choices=["moltbook", "sample"], default="moltbook",
+                   help="'sample' loads synthetic offline posts instead of calling Moltbook")
+    p.add_argument("--sample-file", default=DEFAULT_SAMPLE_FILE, help=argparse.SUPPRESS)
     p.set_defaults(run=collect)
+
+    p = commands.add_parser("demo", help="load synthetic sample posts into a separate database and flag them")
+    p.add_argument("--db", default=SAMPLE_DB, help=f"database for the sample run (default {SAMPLE_DB})")
+    p.add_argument("--limit", type=int, default=50)
+    p.add_argument("--sample-file", default=DEFAULT_SAMPLE_FILE, help=argparse.SUPPRESS)
+    p.set_defaults(run=demo)
 
     p = commands.add_parser("search", help="search stored posts")
     p.add_argument("text")

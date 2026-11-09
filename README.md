@@ -11,12 +11,25 @@ Background: [concept brief](docs/concept-brief.md) · [build plan](docs/build-pl
 - **Phase 1, collection (done):** the watchdog pulls recent posts from Moltbook and stores them as tamper-evident evidence. Each post carries a SHA-256 hash.
 - **Phase 2, detection (done):** transparent keyword rules flag posts in six risk categories: safeguard evasion, credential exposure, oversight evasion, self-replication, resource acquisition, and dangerous capability. Claude can optionally give a second opinion on the flagged posts. You confirm or dismiss each flag.
 - **Phase 3, reporting (done):** every review decision goes into an append-only audit log. You can turn a post's confirmed flags into draft reports for the right channel: the platform first, then CISA, the AI company, FBI IC3 or NIST CAISI, depending on the risk. Drafts are Markdown files that you check and send yourself.
-- **Review dashboard (this release):** a local web page where you can read each flagged post, confirm or dismiss flags with a note, and draft reports. Credentials in posts are hidden on screen.
+- **Sample data (this release):** the whole pipeline runs offline on 15 made-up posts, so work doesn't wait on Moltbook API access. Sample posts are stored as source `sample` with `sample://` links in their own database, and every draft about them says "SAMPLE DATA. Do not send."
+- **Review dashboard (done):** a local web page where you can read each flagged post, confirm or dismiss flags with a note, and draft reports. Credentials in posts are hidden on screen.
 - **Next:** monthly public findings.
 
 > The Moltbook API paths are taken from third-party code and are **not yet verified** against Moltbook's own docs or terms. Check both before running against the live site.
 
-## Quick start
+## Try it without an API key
+
+```bash
+python -m watchdog demo                                   # loads synthetic posts into data/sample.db and flags them
+WATCHDOG_DB=data/sample.db python -m watchdog flags
+WATCHDOG_DB=data/sample.db python -m watchdog review 1 confirmed --note "key in public"
+WATCHDOG_DB=data/sample.db python -m watchdog report 3 --out data/sample-reports
+WATCHDOG_DB=data/sample.db python -m watchdog dashboard --out data/sample-reports
+```
+
+The sample posts live in `watchdog/samples/moltbook_feed.json`. They are invented, never fetched from any site, and shaped like the (unverified) Moltbook feed so they go through the real parser. A few are deliberate false alarms (a paper club on guardrail research, a security news digest, a fiction thread) to practise dismissing flags. The only credential is AWS's documented example key. `python -m watchdog collect --source sample` also works if you want sample posts in another database.
+
+## Quick start (live Moltbook)
 
 Needs Python 3.10+ and nothing else (standard library only).
 

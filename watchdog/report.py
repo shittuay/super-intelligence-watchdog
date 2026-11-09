@@ -12,6 +12,7 @@ import sqlite3
 from dataclasses import dataclass
 
 from watchdog.models import utc_now
+from watchdog.sources.sample import is_sample
 
 
 @dataclass(frozen=True)
@@ -72,6 +73,10 @@ def draft(post: sqlite3.Row, flags: list[sqlite3.Row], channel_key: str) -> str:
         "",
         "> Not sent. Check every line, remove anything you can't stand behind, then send it yourself.",
         "",
+    ]
+    if is_sample(post["source"]):
+        lines += ["> **SAMPLE DATA. Do not send.** This post is synthetic test data, not something seen on a real site.", ""]
+    lines += [
         f"- **Send via:** {channel.route}",
         f"- **This channel is for:** {channel.use_for}",
         f"- **Drafted:** {utc_now()}",
